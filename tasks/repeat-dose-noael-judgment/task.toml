@@ -1,0 +1,35 @@
+# 任务元数据
+id = "repeat-dose-noael-judgment"
+name = "28 天重复给药毒性试验的 NOAEL 判定"
+version = "0.1.0"
+language = "zh-CN"
+
+[task]
+domain = ["toxicology", "pharmacology", "preclinical-safety", "data-analysis"]
+skills = ["sqlite", "pandas", "统计比较", "专业判定", "结构化输出"]
+difficulty = "hard"
+# 专家（毒理专题负责人）与新手完成该题的大致耗时，供难度标定参考
+expert_time_hours = 4
+novice_time_hours = 24
+deliverables = ["judgment.json", "report.md"]
+
+[environment]
+build_context = "environment"
+image = "tox/noael-judgment:base"
+workdir = "/app"
+
+[tests]
+# 判分器在 agent 结束后注入，agent 不可见
+runner = "tests/test.sh"
+oracle = "solution/solve.sh"
+reward_file = "/logs/verifier/reward.txt"
+case_count = 10
+
+[phases]
+build_timeout_sec = 900
+agent_timeout_sec = 7200
+verify_timeout_sec = 900
+
+[resources]
+cpus = 2
+memory_mb = 4096

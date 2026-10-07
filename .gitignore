@@ -1,0 +1,18 @@
+# 本地冒烟验证的工作目录（由 eval/run_task.py 创建）
+.work/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# 评测产物
+eval/runs/
+logs/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

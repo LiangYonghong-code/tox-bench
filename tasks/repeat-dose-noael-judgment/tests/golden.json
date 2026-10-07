@@ -1,0 +1,80 @@
+{
+  "_comment": "判分基准，只有 tests/ 可见、不进镜像。sex_required 表示该条必须覆盖的性别；sex_allowed_extra 表示允许被额外覆盖的性别（该性别在此剂量下确实也受影响，两种写法都算对）。",
+  "study_no": "TOX-2026-0187",
+  "noael_mg_kg_day": 50,
+  "noael_by_sex": {"male": 150, "female": 50},
+  "noael_determining_sex": "female",
+  "target_organs": ["liver"],
+  "findings": [
+    {
+      "key": "肝细胞肥大（适应性改变，相关但非有害）",
+      "aliases": ["中央静脉周围肝细胞肥大", "肝细胞肥大", "肝细胞肥大(中央静脉周围)", "肝细胞肥大（中央静脉周围）", "hepatocellular hypertrophy"],
+      "dose_mg_kg_day": 150,
+      "sex_required": ["male", "female"],
+      "sex_allowed_extra": [],
+      "related": true,
+      "adverse": false,
+      "reversible": null
+    },
+    {
+      "key": "肝细胞坏死（有害，可逆）",
+      "aliases": ["肝细胞坏死", "肝细胞坏死(多灶性)", "多灶性肝细胞坏死", "hepatocellular necrosis"],
+      "dose_mg_kg_day": 500,
+      "sex_required": ["male", "female"],
+      "sex_allowed_extra": [],
+      "related": true,
+      "adverse": true,
+      "reversible": true
+    },
+    {
+      "key": "体重增重抑制 @150（雌性首次相关，有害）",
+      "aliases": ["体重增重抑制", "增重抑制", "体重增长抑制", "体重增重下降", "增重下降", "体重下降", "body weight gain suppression"],
+      "dose_mg_kg_day": 150,
+      "sex_required": ["female"],
+      "sex_allowed_extra": [],
+      "related": true,
+      "adverse": true,
+      "reversible": null
+    },
+    {
+      "key": "体重增重抑制 @500（雄性首次相关，有害）",
+      "aliases": ["体重增重抑制", "增重抑制", "体重增长抑制", "体重增重下降", "增重下降", "体重下降", "body weight gain suppression"],
+      "dose_mg_kg_day": 500,
+      "sex_required": ["male"],
+      "sex_allowed_extra": ["female"],
+      "related": true,
+      "adverse": true,
+      "reversible": true
+    },
+    {
+      "key": "红细胞计数下降 @50（雄性，孤立且落在历史对照范围内）",
+      "aliases": ["红细胞计数下降", "红细胞下降", "红细胞减少", "RBC下降", "RBC降低", "红细胞计数降低", "decreased RBC"],
+      "dose_mg_kg_day": 50,
+      "sex_required": ["male"],
+      "sex_allowed_extra": [],
+      "related": false,
+      "adverse": false,
+      "reversible": null
+    },
+    {
+      "key": "肾小管嗜碱性变（背景病变）",
+      "aliases": ["肾小管嗜碱性变", "肾小管嗜碱性变性", "肾小管上皮嗜碱性变", "renal tubular basophilia"],
+      "dose_mg_kg_day": 0,
+      "sex_required": ["male", "female"],
+      "sex_allowed_extra": [],
+      "related": false,
+      "adverse": false,
+      "reversible": null
+    },
+    {
+      "key": "肾上腺皮质空泡化（应激性继发改变，相关但非有害）",
+      "aliases": ["肾上腺皮质空泡化", "肾上腺皮质细胞空泡化", "肾上腺空泡化", "adrenal cortical vacuolation"],
+      "dose_mg_kg_day": 500,
+      "sex_required": ["male", "female"],
+      "sex_allowed_extra": [],
+      "related": true,
+      "adverse": false,
+      "reversible": null
+    }
+  ]
+}
