@@ -46,7 +46,21 @@ CONFIG_FILE = HERE / "mini_config.yaml"
 IMAGE = os.environ.get("TOX_IMAGE", "tox/noael-judgment:base")
 VERIFY_CONTAINER = "tox-noael-verify"
 SNAPSHOT_IMAGE = IMAGE + "-snapshot"
-DEFAULT_MODEL = os.getenv("MSWEA_MODEL_NAME") or "deepseek/deepseek-chat"
+FALLBACK_MODEL = "deepseek/deepseek-chat"
+
+
+def default_model():
+    """默认模型名。
+
+    注意顺序：mini 的全局配置（`<user_config_dir>/mini-swe-agent/.env`，里面有
+    MSWEA_MODEL_NAME 与各家 API key）是在 `import minisweagent` 时用 dotenv 加载的，
+    所以必须**先 import 再读环境变量** —— 在模块顶层读会读不到。
+    """
+    try:
+        import minisweagent  # noqa: F401  触发全局 .env 加载
+    except ImportError:
+        pass
+    return os.getenv("MSWEA_MODEL_NAME") or FALLBACK_MODEL
 
 # agent 侧要收集回 run 目录的产物
 ARTIFACTS = ["/app/judgment.json", "/app/report.md",
@@ -137,7 +151,7 @@ def judge_local(app_dir, run_dir):
 
 
 # ------------------------------------------------------------------ 主流程
-def run_agent(runner="docker", model_name=DEFAULT_MODEL, run_id=None, max_steps=40,
+def run_agent(runner="docker", model_name=None, run_id=None, max_steps=40,
               cost_limit=2.0, wall_time=1800, cmd_timeout=None, verify_mode="snapshot",
               keep_container=False, model_override=None, app_dir=None, build=True,
               extra_note="", allow_local_model=False):
@@ -151,6 +165,7 @@ def run_agent(runner="docker", model_name=DEFAULT_MODEL, run_id=None, max_steps=
             "请改用 --runner docker；若确实要这么做，显式加 --i-know-local-runs-on-host。"
         )
 
+    model_name = model_name or default_model()
     config, note = load_config()
     if cmd_timeout:
         config.setdefault("environment", {})["timeout"] = cmd_timeout
@@ -252,7 +267,7 @@ def task_fingerprint():
 def main():
     ap = argparse.ArgumentParser(description="用 mini-swe-agent 跑模型并判分")
     ap.add_argument("--runner", choices=["docker", "local"], default="docker")
-    ap.add_argument("--model", default=DEFAULT_MODEL, help=f"默认 {DEFAULT_MODEL}")
+    ap.add_argument("--model", default=None, help="默认取全局配置的 MSWEA_MODEL_NAME（兜底 deepseek/deepseek-chat）")
     ap.add_argument("--run-id", default=None, help="轨迹与产物的存档目录名")
     ap.add_argument("--max-steps", type=int, default=40)
     ap.add_argument("--cost-limit", type=float, default=2.0, help="美元上限")
