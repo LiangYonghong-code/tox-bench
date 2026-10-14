@@ -31,9 +31,13 @@ tox-bench/
 │           └── solve.sh               ← 参考解（全部数值由 study.db 计算得出）
 ├── build-tools/                       ← 作者侧工具，**不进入镜像、不随任务包提交**
 │   ├── make_study_db.py               ← 生成研究数据（含设计的效应量 = 部分真值）
-│   └── check_discrimination.py        ← 变异解自检
+│   ├── check_discrimination.py        ← 变异解自检
+│   └── test_agent_wiring.py           ← agent 链路自检（不花钱、不需要 Docker）
 └── eval/
-    └── run_task.py                    ← 评测驱动：构建 → 解题 → 判分 → reward
+    ├── run_task.py                    ← 评测驱动：oracle / base（证明判分器可信）
+    ├── agent.py                       ← 用 mini-swe-agent 跑模型（测量模型能力）
+    ├── mini_config.yaml               ← mini-swe-agent 的最小配置覆盖
+    └── runs/<run-id>/                 ← 每次模型运行的轨迹、交付物、判分产物
 ```
 
 **`build-tools/` 刻意放在 `tasks/` 之外**：`make_study_db.py` 里写着每个剂量组的效应量，
@@ -56,7 +60,18 @@ python eval/run_task.py --mode base
 
 # ④ 变异解自检：10 个"看似合理但违反 SOP"的答案必须全部被抓住
 python build-tools/check_discrimination.py
+
+# ⑤ agent 链路自检（不花钱、不需要 Docker，用 DeterministicModel 跑通接线）
+python build-tools/test_agent_wiring.py
 ```
+
+前置依赖：
+
+| 用途 | 需要什么 |
+|---|---|
+| 跑判分器 / 前四步 | Python 3.11+、`numpy`、`pandas`（`pytest` 可选） |
+| 起容器（`--runner docker`） | Docker 引擎可用 |
+| 测模型（`--mode agent`） | `mini-swe-agent`（已在 2.2.8 上验证）、模型 API key |
 
 `eval/run_task.py` 有两种 runner：
 
@@ -154,13 +169,67 @@ agent 必须交付 `judgment.json`（机器判分）与 `report.md`（证据说�
 | 2 | oracle 对照 | `python eval/run_task.py --mode oracle` | `reward = 1` |
 | 3 | base 对照 | `python eval/run_task.py --mode base` | `reward = 0` |
 
-第 1 道的必要性：oracle 与判分器出自同一套规则理解，它们只能证明"彼此一致"。
+第 1 道的必要性：oracle 与判分器出自同一套认知，它们只能证明"彼此一致"。
 **变异解才是真正在问"判分器会不会被似是而非的答案骗过去"** —— 上表的 10 个变异解，
 每一个都对应一种模型很容易犯的专业判断错误。
 
 ---
 
-## 6. 已知的坑
+## 6. 用 mini-swe-agent 测模型
+
+前三道验证证明**判分器**可信；这一步才开始测量**模型**。
+
+```
+base（空基线，reward 0） ←── 模型（agent）──→ oracle（标准解，reward 1）
+        下限                    被测对象                上限
+```
+
+### 6.1 为什么用 mini-swe-agent
+
+- 它是**框架**，不是"另一个要适配的评测集"：`DefaultAgent` + `DockerEnvironment` +
+  `LitellmModel` 三个类就能拼出一次完整运行，容器 ID 挂在 `env.container_id` 上，
+  便于我们在 agent 结束后接管判分。
+- 走 litellm，DeepSeek / OpenAI / Anthropic 换模型只改一个 `--model` 字符串。
+- **不覆盖上游 prompt**：`eval/mini_config.yaml` 只改环境超时，`system_template` /
+  `instance_template` 一律沿用上游默认——上游模板里带着 bash heredoc / sed / nl 的示例，
+  换掉它，测出来的就变成"模型熟不熟这套 prompt"，而不是"模型的毒理判定能力"。
+  本次运行的**事实性约定**（交付物路径、结束命令）以 `harness_note` 追加在题面之后。
+
+### 6.2 跑之前：先确认地基
+
+```powershell
+python eval\run_task.py --mode oracle --runner docker   # 必须 = 1
+python eval\run_task.py --mode base   --runner docker   # 必须 = 0
+python eval\run_task.py --mode agent  --runner docker --model deepseek/deepseek-chat --run-id flash-1
+```
+
+**顺序不能颠倒**：如果 oracle/base 不对，判分器本身就是坏的，此时 agent 跑出来的 0 分
+你无法区分是"模型弱"还是"判分器/参考解有 bug"。详见第 5 节。
+
+### 6.3 每次运行产出什么
+
+```
+eval/runs/<run-id>/
+├── trajectory.json    ← mini 的完整轨迹（每步的思考、命令、观测、成本）
+├── run.json           ← 本次元数据：reward / 步数 / 成本 / 耗时 / exit_status / task_fingerprint
+├── judgment.json      ← 模型交上来的交付物快照
+├── report.md          ← 同上
+├── ctrf.json          ← 逐用例通过状态（哪个陷阱没判对）
+└── verify.log         ← 判分过程日志
+```
+
+`task_fingerprint` 是题面 + SOP + 数据的联合哈希：**两次 run 的指纹不同就说明题目变了，
+分数不可直接比较**——这是做难度标定最容易踩的坑。
+
+### 6.4 判分的隔离方式
+
+`--verify-mode snapshot`（默认）：agent 跑完 → `docker commit` 快照 → 从快照起干净容器
+→ 这时才注入 `tests/` → 判分。agent 全程看不到断言。
+`--verify-mode inplace` 直接在 agent 容器里判分，快，但不体现隔离。
+
+---
+
+## 7. 已知的坑
 
 - **重建 `study.db` 后必须刷新 `tests/db.sha256`**（`make_study_db.py` 会自动写），
   否则 `test_study_db_not_modified` 会永远失败。
@@ -178,7 +247,7 @@ agent 必须交付 `judgment.json`（机器判分）与 `report.md`（证据说�
 
 ---
 
-## 7. 待办（下一步的标定工作）
+## 8. 待办（下一步的标定工作）
 
 - [ ] **难度标定**：本题专家约 4 小时，需要真实跑 2–3 个模型，记录通过率、步数与成本。
 - [ ] 若模型通过率过高（题目变成"规格转写"），可考虑：把 SOP 的阈值改为需要从历史数据
@@ -188,7 +257,7 @@ agent 必须交付 `judgment.json`（机器判分）与 `report.md`（证据说�
 
 ---
 
-## 8. 红线
+## 9. 红线
 
 本仓库的数据与题目均为**用生成器合成**的模拟研究（`build-tools/make_study_db.py`），
 不包含任何真实委托方的数据。请勿把平台/雇主下发的题目包、真实试验数据、内部 SOP

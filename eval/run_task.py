@@ -13,6 +13,8 @@
     python eval/run_task.py --mode oracle                 # 期望 reward=1
     python eval/run_task.py --mode base                    # 期望 reward=0
     python eval/run_task.py --mode oracle --runner docker  # 需要 Docker 引擎可用
+    python eval/run_task.py --mode agent  --runner docker --model deepseek/deepseek-chat
+                                                           # 让 mini-swe-agent 跑模型（测量）
 """
 import argparse
 import importlib.util
@@ -150,10 +152,31 @@ def docker_mode(mode):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["oracle", "base"], default="oracle",
-                    help="oracle=注入参考解；base=不注入（空基线，期望 reward=0）")
+    ap.add_argument("--mode", choices=["oracle", "base", "agent"], default="oracle",
+                    help="oracle=注入参考解（期望 1）；base=不注入（期望 0）；"
+                         "agent=让 mini-swe-agent 跑模型（测量，无预设期望）")
     ap.add_argument("--runner", choices=["local", "docker"], default="local")
+    # 仅 --mode agent 使用
+    ap.add_argument("--model", default=None, help="模型名，如 deepseek/deepseek-chat")
+    ap.add_argument("--run-id", default=None, help="轨迹存档目录名")
+    ap.add_argument("--max-steps", type=int, default=40)
+    ap.add_argument("--cost-limit", type=float, default=2.0)
+    ap.add_argument("--wall-time", type=int, default=1800)
+    ap.add_argument("--verify-mode", choices=["snapshot", "inplace"], default="snapshot")
+    ap.add_argument("--keep-container", action="store_true")
     args = ap.parse_args()
+
+    if args.mode == "agent":
+        sys.path.insert(0, HERE)
+        import agent as agent_mod
+        kwargs = dict(runner=args.runner, run_id=args.run_id, max_steps=args.max_steps,
+                      cost_limit=args.cost_limit, wall_time=args.wall_time,
+                      verify_mode=args.verify_mode, keep_container=args.keep_container)
+        if args.model:
+            kwargs["model_name"] = args.model
+        reward, record = agent_mod.run_agent(**kwargs)
+        print(f"\n[agent] reward = {reward}（模型实际表现，无预设期望）")
+        return 0
 
     if args.runner == "docker":
         reward, note = docker_mode(args.mode)
