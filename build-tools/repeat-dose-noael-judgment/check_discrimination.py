@@ -1,26 +1,30 @@
 # -*- coding: utf-8 -*-
-"""区分度自检（变异解）：把参考解的输出逐条改成"看似合理但违反 SOP"的答案，
+"""变异解自检：把参考解的输出逐条改成"看似合理但违反 SOP"的答案，
 要求每个变异解至少被一个用例判失败。
 
 这是任务包最重要的作者侧验证：它证明判分器不是"只要交了文件就给分"，
 而是真的能分辨 NOAEL 判定中的典型错误。
 
 用法：
-    python build-tools/check_discrimination.py
+    python build-tools/repeat-dose-noael-judgment/check_discrimination.py
 退出码 0 = 全部变异解都被抓住；1 = 存在漏网的变异解（题目或判分器需要修）。
+
+判哪道题由**目录位置**决定：本文件住在 build-tools/<题目录名>/ 下，
+只对该目录名对应的 tasks/<题目录名>/ 生效。
 """
 import copy
-import importlib.util
 import json
 import os
 import shutil
-import subprocess
 import sys
 
+# 与 make_study_db.py 同一约定：父目录名 == tasks/ 下的题目录名
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(HERE)
+REPO = os.path.dirname(os.path.dirname(HERE))
+TASK_DIR_NAME = os.path.basename(HERE)
 sys.path.insert(0, os.path.join(REPO, "eval"))
-import run_task  # noqa: E402  （复用评测驱动的临时环境与内置 runner）
+
+import common  # noqa: E402  （复用评测驱动的临时环境与内置 runner）
 
 
 # ------------------------------------------------------------------ 变异操作
@@ -103,32 +107,41 @@ VARIANTS = [
 ]
 
 
-def run_oracle(app):
-    payload = run_task.extract_payload(run_task.SOLVE)
-    script = os.path.join(app, "_solve.py")
-    with open(script, "w", encoding="utf-8") as f:
-        f.write(payload)
-    proc = subprocess.run([sys.executable, script], capture_output=True, text=True,
-                          env=dict(os.environ, APP_DIR=app))
-    if proc.returncode != 0:
-        print(proc.stdout + proc.stderr)
+def run_oracle(task, app):
+    ok, output = common.run_oracle_local(task, app)
+    if not ok:
+        print(output)
         raise SystemExit("参考解执行失败，先修参考解")
     with open(os.path.join(app, "judgment.json"), encoding="utf-8") as f:
         return json.load(f)
 
 
 def main():
-    app = run_task.prepare_local_app()
+    # 不接 --task：下面的 VARIANTS 是针对本题的 28 天重复给药试验写的，
+    # 拿去跑别的题只会得到无意义的失败。目录名就是选题依据。
+    _, tasks = common.load_tasks()
+    mine = [t for t in tasks if t.dir.name == TASK_DIR_NAME]
+    if not mine:
+        raise SystemExit(
+            f"eval/tasks.yaml 里没有 dir 名为 `{TASK_DIR_NAME}` 的题目；"
+            f"本脚本住在 build-tools/{TASK_DIR_NAME}/，只能为本目录对应的题服务")
+    return 0 if check_one(mine[0]) else 1
+
+
+def check_one(task):
+    print(f"\n######## task{task.id} {task.slug} ########")
+    app = common.prepare_local_app(task)
     try:
-        base = run_oracle(app)
+        base = run_oracle(task, app)
+        os.makedirs(os.path.join(REPO, ".work"), exist_ok=True)
         shutil.copy(os.path.join(app, "judgment.json"),
                     os.path.join(REPO, ".work", "judgment.oracle.json"))
 
-        results = run_task.run_tests_builtin(app)
+        results = common.run_tests_builtin(task, app)
         oracle_failed = [n for n, ok, _ in results if not ok]
         print(f"[oracle] {'全部通过' if not oracle_failed else '失败: ' + ', '.join(oracle_failed)}")
         if oracle_failed:
-            return 1
+            return False
 
         print(f"\n[变异解] 共 {len(VARIANTS)} 个，要求每个至少被 1 个用例抓住\n")
         header = f"{'变异解':<34} {'结果':<6} 抓住它的用例"
@@ -140,7 +153,7 @@ def main():
             mutate(j)
             with open(os.path.join(app, "judgment.json"), "w", encoding="utf-8") as f:
                 json.dump(j, f, ensure_ascii=False, indent=2)
-            res = run_task.run_tests_builtin(app)
+            res = common.run_tests_builtin(task, app)
             caught = [n for n, ok, _ in res if not ok]
             ok = bool(caught)
             if not ok:
@@ -153,9 +166,9 @@ def main():
             print("存在漏网的变异解，判分器需要加强：")
             for name in escaped:
                 print("  -", name)
-            return 1
-        print("全部变异解均被抓住：判分器具备区分度。")
-        return 0
+            return False
+        print("全部变异解均被抓住：判分器能识别每一类错误。")
+        return True
     finally:
         shutil.rmtree(app, ignore_errors=True)
 

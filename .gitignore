@@ -1,4 +1,4 @@
-# 本地冒烟验证的工作目录（由 eval/run_task.py 创建）
+# 变异解自检留下的中间产物（作者侧看一眼用，不进版本库）
 .work/
 
 # Python
@@ -10,6 +10,14 @@ __pycache__/
 # 评测产物
 eval/runs/
 logs/
+
+# Harbor 运行产物
+jobs/
+
+# 本地密钥（mini-swe-agent 通过 dotenv 读取 API key）
+.env
+.env.*
+!.env.example
 
 # 编辑器 / 系统
 .vscode/

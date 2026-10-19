@@ -87,7 +87,9 @@
 
 - **不得修改** `/app/study.db` 与 `/app/SOP_toxicity_criteria.md`。
 - 只使用容器内已安装的库（`numpy`、`pandas`、`scipy` 等）。
-- 所有数值**必须由 `study.db` 计算得出**，不得硬编码或凭经验填写。
+- 所有数值**必须由 `study.db` 计算或推断得出**，不得硬编码或凭经验填写。
+- **本版 SOP 不再列出具体数值阈值**（例如"下降百分之多少算有害"）：你需要根据
+  `study.db` 中的 `historical_control` 表和 `historical_noael_events` 表推断合理的判定阈值。
 - 不得使用本 SOP 之外的判定标准。
 
 ## 完成标准

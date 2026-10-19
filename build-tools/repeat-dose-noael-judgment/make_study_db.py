@@ -6,7 +6,7 @@
 `environment/Dockerfile` 只 COPY study.db 与 SOP，因此本文件不会进容器。
 
 用法：
-    python build-tools/make_study_db.py
+    python build-tools/repeat-dose-noael-judgment/make_study_db.py
 产出：
     tasks/repeat-dose-noael-judgment/environment/study.db
     tasks/repeat-dose-noael-judgment/tests/db.sha256   （判分器用它校验 study.db 未被修改）
@@ -18,9 +18,12 @@ import sqlite3
 
 import numpy as np
 
+# 本脚本住在 build-tools/<题目录名>/ 下，与 tasks/<题目录名>/ 同名。
+# 题目录名直接取自本文件的父目录名 —— 这样"这个生成器为哪道题服务"由
+# 目录结构保证，不靠散落的字符串常量，也不依赖 eval/tasks.yaml 已经就位。
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(HERE)
-TASK = os.path.join(REPO, "tasks", "repeat-dose-noael-judgment")
+REPO = os.path.dirname(os.path.dirname(HERE))
+TASK = os.path.join(REPO, "tasks", os.path.basename(HERE))
 DB_PATH = os.path.join(TASK, "environment", "study.db")
 SHA_PATH = os.path.join(TASK, "tests", "db.sha256")
 
@@ -123,6 +126,51 @@ HISTORICAL = [
     ("BUN (mmol/L)", "female", 6.2, 0.8, 3.8, 9.0),
     ("CREA (umol/L)", "male", 42.0, 4.0, 30.0, 58.0),
     ("CREA (umol/L)", "female", 40.0, 4.0, 28.0, 55.0),
+    # 新增：体重、摄食、脏器重量比的历史对照，供 agent 推断阈值
+    ("体重增重 (g)", "male", 190.0, 7.0, 170.0, 210.0),
+    ("体重增重 (g)", "female", 105.0, 4.5, 92.0, 118.0),
+    ("摄食量 (g/天)", "male", 22.0, 1.4, 18.0, 26.0),
+    ("摄食量 (g/天)", "female", 16.0, 1.1, 13.0, 19.0),
+    ("肝/脑重量比", "male", 5.00, 0.22, 4.40, 5.60),
+    ("肝/脑重量比", "female", 5.10, 0.22, 4.50, 5.70),
+    ("肾/脑重量比", "male", 1.05, 0.05, 0.90, 1.20),
+    ("肾/脑重量比", "female", 1.00, 0.05, 0.85, 1.15),
+]
+
+# 新增：本机构历史 NOAEL 判定案例，agent 需据此推断“多大幅度的改变算有害”。
+# 设计原则：边界清晰，让简单推断（取 was_adverse=0 的最大值与 was_adverse=1 的最小值的中点）
+# 能还原到与原 SOP 阈值接近的数值。
+HISTORICAL_NOAEL_EVENTS = [
+    # event_id, compound_id, species, parameter, dose_mg_kg_day, effect_size_pct, co_change_pct,
+    # histo_grade, ctrl_incidence_pct, dose_related_increase_pct, historical_max, was_adverse, was_related, notes
+    (1, "CMP-A", "大鼠", "体重增重抑制", 100, -5.0, -2.0, None, None, None, None, 0, None,
+     "轻度增重下降，无摄食下降，不判为有害"),
+    (2, "CMP-B", "大鼠", "体重增重抑制", 200, -8.0, -4.0, None, None, None, None, 0, None,
+     "中度增重下降，仍在历史变异范围，不判为有害"),
+    (3, "CMP-C", "大鼠", "体重增重抑制", 300, -12.0, -6.0, None, None, None, None, 1, None,
+     "明显增重抑制伴摄食下降，判为有害"),
+    (4, "CMP-D", "大鼠", "体重增重抑制", 400, -18.0, -10.0, None, None, None, None, 1, None,
+     "严重增重抑制，判为有害"),
+    (5, "CMP-E", "大鼠", "摄食量下降", 150, -3.0, None, None, None, None, None, 0, None,
+     "轻度摄食下降，不单独构成有害"),
+    (6, "CMP-F", "大鼠", "摄食量下降", 250, -7.0, None, None, None, None, None, 1, None,
+     "明显摄食下降，与增重抑制共同构成有害"),
+    (7, "CMP-G", "大鼠", "肝细胞坏死", 500, None, None, 1, None, None, 75.0, 0, None,
+     "1级肝细胞坏死，ALT未超历史上限，不判为有害"),
+    (8, "CMP-H", "大鼠", "肝细胞坏死", 500, None, None, 2, None, None, 85.0, 1, None,
+     "2级肝细胞坏死且ALT超历史上限，判为有害"),
+    (9, "CMP-I", "大鼠", "红细胞计数下降", 100, -4.0, None, None, None, None, 9.10, 0, 0,
+     "红细胞下降在历史对照范围内，无剂量反应，非受试物相关"),
+    (10, "CMP-J", "大鼠", "红细胞计数下降", 200, -9.0, None, None, None, None, 8.80, 1, 1,
+     "红细胞下降超历史对照上限，受试物相关"),
+    (11, "CMP-K", "大鼠", "组织病理学背景病变", 0, None, None, None, 40.0, 5.0, None, 0, 0,
+     "对照组发生率40%，组间差异5个百分点，判为背景病变"),
+    (12, "CMP-L", "大鼠", "组织病理学背景病变", 0, None, None, None, 35.0, 10.0, None, 0, 0,
+     "对照组发生率35%，组间差异10个百分点，判为背景病变"),
+    (13, "CMP-M", "大鼠", "组织病理学背景病变", 200, None, None, None, 5.0, 25.0, None, 0, 1,
+     "对照组发生率5%，剂量相关升高25个百分点，不判为背景病变"),
+    (14, "CMP-N", "大鼠", "组织病理学背景病变", 300, None, None, None, 10.0, 20.0, None, 0, 1,
+     "对照组发生率10%，剂量相关升高20个百分点，不判为背景病变"),
 ]
 
 
@@ -164,6 +212,22 @@ def main():
         animal_id TEXT, organ TEXT, finding TEXT, grade INTEGER);
     CREATE TABLE historical_control (
         parameter TEXT, sex TEXT, mean REAL, sd REAL, min REAL, max REAL);
+    CREATE TABLE historical_noael_events (
+        event_id INTEGER PRIMARY KEY,
+        compound_id TEXT,
+        species TEXT,
+        parameter TEXT,
+        dose_mg_kg_day REAL,
+        effect_size_pct REAL,
+        co_change_pct REAL,
+        histo_grade INTEGER,
+        ctrl_incidence_pct REAL,
+        dose_related_increase_pct REAL,
+        historical_max REAL,
+        was_adverse INTEGER,
+        was_related INTEGER,
+        notes TEXT
+    );
     """)
 
     info = {
@@ -180,6 +244,9 @@ def main():
     }
     cur.executemany("INSERT INTO study_info VALUES (?,?)", list(info.items()))
     cur.executemany("INSERT INTO historical_control VALUES (?,?,?,?,?,?)", HISTORICAL)
+    cur.executemany(
+        "INSERT INTO historical_noael_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        HISTORICAL_NOAEL_EVENTS)
 
     for i, dose in enumerate(DOSES):
         cur.execute("INSERT INTO groups VALUES (?,?,?,?,?,?)",

@@ -1,0 +1,44 @@
+# Harbor job config 示例：跑 tox-bench 的两道题
+#
+# 使用方式：
+#   uv tool run harbor run --config harbor-example.yaml
+#
+# 也可以不用 config 文件，直接用命令行：
+#   uv tool run harbor run --path tasks \
+#     --agent mini-swe-agent \
+#     --model your-provider/your-model \
+#     --n-concurrent 2
+
+job_name: tox-bench-example
+
+# 任务来源：从 tasks/ 目录扫描所有 task.toml
+datasets:
+  - path: tasks
+
+# 并发数（默认 4，这里设小一点避免本地资源吃紧）
+n_concurrent_trials: 2
+
+# 每个 trial 的尝试次数
+n_attempts: 1
+
+# 超时倍数
+timeout_multiplier: 1.0
+
+# Agent 配置：指定脚手架和模型
+# 注意：模型名只写在这里，不写进 task.toml / instruction.md / harness 代码
+agents:
+  - name: mini-swe-agent
+    # 把 your-provider/your-model 换成实际要评测的模型
+    model_name: "your-provider/your-model"
+    # 如需给 mini-swe-agent 传额外参数，先用 `harbor agent schema mini-swe-agent` 查看
+    # 可用字段，再按需添加
+
+# 环境配置
+environment:
+  type: docker
+  force_build: false
+  delete: true
+
+# 判分器配置
+verifier:
+  disable: false

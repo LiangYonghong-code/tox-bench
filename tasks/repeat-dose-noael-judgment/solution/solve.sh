@@ -30,6 +30,7 @@ hema = pd.read_sql("SELECT * FROM hematology", con)
 biochem = pd.read_sql("SELECT * FROM biochemistry", con)
 histo = pd.read_sql("SELECT * FROM histopathology", con)
 hist_ref = pd.read_sql("SELECT * FROM historical_control", con)
+events = pd.read_sql("SELECT * FROM historical_noael_events", con)
 
 SEXES = ["male", "female"]
 main_dose = {gid: int(dose) for gid, dose in zip(
@@ -85,6 +86,50 @@ def hist_mean_sd(parameter, sex):
     return float(row["mean"]), float(row["sd"])
 
 
+def infer_threshold(events_df, parameter, value_col, flag_col, default, abs_value=True):
+    """从 historical_noael_events 推断阈值。
+    取 flag_col=0 的最大 value_col 与 flag_col=1 的最小 value_col，以中点作为阈值。
+    """
+    sub = events_df[events_df.parameter == parameter]
+    if sub.empty:
+        return default
+    non_vals = sub[sub[flag_col] == 0][value_col].dropna()
+    adv_vals = sub[sub[flag_col] == 1][value_col].dropna()
+    if non_vals.empty or adv_vals.empty:
+        return default
+    if abs_value:
+        non_max = abs(non_vals).max()
+        adv_min = abs(adv_vals).min()
+    else:
+        non_max = non_vals.max()
+        adv_min = adv_vals.min()
+    return (non_max + adv_min) / 2.0
+
+
+def infer_background_thresholds(events_df):
+    """推断背景病变阈值：对照组发生率阈值 + 剂量相关升高阈值。"""
+    sub = events_df[events_df.parameter == "组织病理学背景病变"]
+    if sub.empty:
+        return 0.30, 0.15
+    non_rel = sub[sub.was_related == 0]
+    rel = sub[sub.was_related == 1]
+    if non_rel.empty or rel.empty:
+        return 0.30, 0.15
+    ctrl_thr = (non_rel.ctrl_incidence_pct.min() + rel.ctrl_incidence_pct.max()) / 2.0 / 100.0
+    diff_thr = (non_rel.dose_related_increase_pct.max() + rel.dose_related_increase_pct.min()) / 2.0 / 100.0
+    return ctrl_thr, diff_thr
+
+
+# ---------------------------------------------------------------- 从历史数据推断阈值
+# effect_size_pct 等字段以百分比存储，需除以 100 转为小数
+BW_ADV_THRESHOLD = infer_threshold(events, "体重增重抑制", "effect_size_pct", "was_adverse", 0.10) / 100.0
+FOOD_ADV_THRESHOLD = infer_threshold(events, "摄食量下降", "effect_size_pct", "was_adverse", 0.05) / 100.0
+NEC_GRADE_THRESHOLD = infer_threshold(events, "肝细胞坏死", "histo_grade", "was_adverse", 1.5, abs_value=False)
+BG_CTRL_THRESHOLD, BG_DIFF_THRESHOLD = infer_background_thresholds(events)
+
+# 组织病理学显著程度用等级阈值的上取整
+NEC_GRADE_CUTOFF = int(math.ceil(NEC_GRADE_THRESHOLD))
+
 # ---------------------------------------------------------------- 体重增重与摄食
 w = bw.merge(meta[["animal_id", "sex", "dose_mg_kg_day", "is_recovery"]], on="animal_id")
 w1 = w[w.day == 1].set_index("animal_id")["weight_g"]
@@ -106,8 +151,9 @@ food_main = by_sex_dose(food_mean[food_mean.is_recovery == 0], "g_per_day")
 gain_ratio = {s: {d: ratio(gain_main[s][d], gain_main[s][CTRL]) for d in LEVELS} for s in SEXES}
 food_ratio = {s: {d: ratio(food_main[s][d], food_main[s][CTRL]) for d in LEVELS} for s in SEXES}
 
-# SOP 2.2：增重下降 >=10% 且摄食量下降 >=5% 才算有害
-bw_adverse = {s: {d: (gain_ratio[s][d] <= 0.90 and food_ratio[s][d] <= 0.95)
+# SOP 2.2：增重抑制超过阈值且摄食量下降超过阈值才判为有害
+bw_adverse = {s: {d: (gain_ratio[s][d] <= (1.0 - BW_ADV_THRESHOLD)
+                      and food_ratio[s][d] <= (1.0 - FOOD_ADV_THRESHOLD))
                   for d in LEVELS} for s in SEXES}
 
 # ---------------------------------------------------------------- 肝脏
@@ -185,13 +231,13 @@ else:
     for s, d in hyp_doses.items():
         add(F_HYPERTROPHY, d, [s], True, False)
 
-# ---- 肝细胞坏死：分级 >=2 且 ALT 或 AST 超历史上限 → 有害（SOP 3.2）
+# ---- 肝细胞坏死：显著组织病理学改变且 ALT 或 AST 超历史上限 → 有害（SOP 3.2）
 nec_first = {}
 for s in SEXES:
     for d in LEVELS:
         if d == CTRL:
             continue
-        if (max_grade(F_NECROSIS, s, d) >= 2
+        if (max_grade(F_NECROSIS, s, d) >= NEC_GRADE_CUTOFF
                 and (above_hist(s, d, "ALT (U/L)") or above_hist(s, d, "AST (U/L)"))):
             nec_first[s] = d
             break
@@ -253,21 +299,21 @@ for col, label, finding_name in HEMA_PARAMS:
         if in_range and not monotonic:      # SOP 1.2：非受试物相关
             add(finding_name, min(d for d, _ in flagged), [s], False, False)
 
-# ---- 背景病变（SOP 5.1）：对照发生率 >=30% 且各剂量组差异 <15 个百分点
+# ---- 背景病变（SOP 5.1）：对照组常见且各剂量组无明确剂量相关升高
 for finding in sorted(hp.finding.unique()):
     bg_sexes = []
     for s in SEXES:
         ctrl_inc = incidence(finding, s, CTRL) / max(n_main[(s, CTRL)], 1)
-        if ctrl_inc < 0.30:
+        if ctrl_inc < BG_CTRL_THRESHOLD:
             continue
         max_diff = max(abs(incidence(finding, s, d) / max(n_main[(s, d)], 1) - ctrl_inc)
                        for d in LEVELS if d != CTRL)
-        if max_diff < 0.15:
+        if max_diff < BG_DIFF_THRESHOLD:
             bg_sexes.append(s)
     if bg_sexes:
         add(finding, 0, bg_sexes, False, False)
 
-# ---- 应激性继发改变（SOP 6.1）：肾上腺皮质空泡化 / 胸腺萎缩，仅见于增重抑制 >=10% 的剂量组
+# ---- 应激性继发改变（SOP 6.1）：肾上腺皮质空泡化 / 胸腺萎缩，仅见于增重抑制有害的剂量组
 for finding in (F_ADRENAL, F_THYMUS):
     stress = {}
     for s in SEXES:
@@ -342,7 +388,8 @@ for s in SEXES:
                      f"| {pct(food_ratio[s][d])} | {verdict} |")
 lines += [
     "",
-    "SOP 2.2 要求增重下降 ≥10% **且**摄食量下降 ≥5% 才判为有害："
+    f"依据 `historical_noael_events` 推断：增重抑制阈值约为 {BW_ADV_THRESHOLD*100:.0f}%，"
+    f"摄食下降阈值约为 {FOOD_ADV_THRESHOLD*100:.0f}%，两者同时满足才判为有害。"
     f"雌性 {bw_first['female']} mg/kg/day 组同时满足，故雌性 NOAEL 降至 "
     f"{noael_sex['female']} mg/kg/day；"
     f"雄性最低有害剂量为 {bw_first['male']} mg/kg/day，雄性 NOAEL 为 {noael_sex['male']} mg/kg/day。",
@@ -372,8 +419,8 @@ lines += [
     f"ALT 历史对照范围 {lo_alt:.0f}–{hi_alt:.0f} U/L，AST {lo_ast:.0f}–{hi_ast:.0f} U/L。"
     f"{hyp_doses.get('male', '-')} mg/kg/day 组肝细胞肥大伴肝/脑重量比升高，但 ALT/AST 仍在历史"
     "范围内，按 SOP 3.1 判为**适应性反应（相关但非有害）**；"
-    f"{nec_first.get('male', '-')} mg/kg/day 组出现肝细胞坏死（≥2 级）且 ALT/AST 超出历史上限，"
-    "按 SOP 3.2 判为**有害**。",
+    f"{nec_first.get('male', '-')} mg/kg/day 组出现肝细胞坏死（≥{NEC_GRADE_CUTOFF} 级）"
+    f"且 ALT/AST 超出历史上限，按 SOP 3.2 判为**有害**。",
     "",
     "### 2.3 可逆性",
     "",
@@ -396,7 +443,7 @@ lines += [
     "",
     f"- 肝细胞肥大（{hyp_doses.get('male', '-')} mg/kg/day）：肝/脑重量比升高但无肝细胞损伤标志物升高，"
     "属适应性反应（SOP 3.1）。",
-    f"- 肾上腺皮质空泡化 / 胸腺萎缩（{max(LEVELS)} mg/kg/day）：仅见于增重抑制 ≥10% 的动物，"
+    f"- 肾上腺皮质空泡化 / 胸腺萎缩（{max(LEVELS)} mg/kg/day）：仅见于出现有害增重抑制的动物，"
     "判为应激性继发改变（SOP 6.1），不作为独立毒性终点。",
     "",
     "## 4. 判定为非受试物相关或背景病变的改变",
@@ -421,7 +468,8 @@ lines.append(
     f"- 肾小管嗜碱性变：对照组发生率 "
     f"{incidence(F_BASOPHILIA, 'male', CTRL) / n_main[('male', CTRL)] * 100:.0f}%，"
     f"最高剂量组 {incidence(F_BASOPHILIA, 'male', top) / n_main[('male', top)] * 100:.0f}%，"
-    "组间差异 <15 个百分点，按 SOP 5.1 判为背景病变。")
+    f"组间差异小于背景阈值（约 {BG_DIFF_THRESHOLD*100:.0f} 个百分点），"
+    "按 SOP 5.1 判为背景病变。")
 with open(os.path.join(APP, "report.md"), "w", encoding="utf-8") as fh:
     fh.write("\n".join(lines) + "\n")
 

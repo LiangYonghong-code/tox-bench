@@ -4,7 +4,7 @@
 设计要点
 --------
 * **无 pytest 依赖也能跑**：本文件只使用 assert，不 import pytest、不使用 fixture，
-  因此既能被 pytest 收集，也能被 eval/run_task.py 的内置 runner 直接调用
+  因此既能被 pytest 收集，也能被 eval/common.py 的内置 runner 直接调用
   （便于在没有 pytest / Docker 的机器上做冒烟验证）。
 * **判分器与解题环境隔离**：本文件在 agent 结束、容器 commit 之后才注入，agent 看不到断言。
 * **只判客观项**：NOAEL 数值、分性别 NOAEL、靶器官集合、关键发现的

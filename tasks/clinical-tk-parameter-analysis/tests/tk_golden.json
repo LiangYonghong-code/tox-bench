@@ -1,0 +1,69 @@
+{
+  "rows": [
+    {
+      "animal_id": 101,
+      "dose_group": "G1",
+      "route": "IV",
+      "cmax_ng_ml": 2960.0,
+      "tmax_h": 0.079,
+      "auc_0_t_h_ng_ml": 4169.832640414044,
+      "auc_0_inf_h_ng_ml": 4279.192076063614,
+      "t_half_h": 2.311042210003845,
+      "mrt_h": 3.1047235950261407,
+      "cl_ml_h_kg": 1168.4448632180704,
+      "vss_ml_kg": 3627.698336320235
+    },
+    {
+      "animal_id": 102,
+      "dose_group": "G1",
+      "route": "IV",
+      "cmax_ng_ml": 2990.0,
+      "tmax_h": 0.079,
+      "auc_0_t_h_ng_ml": 4769.734625062822,
+      "auc_0_inf_h_ng_ml": null,
+      "t_half_h": 11.126737116996916,
+      "mrt_h": null,
+      "cl_ml_h_kg": null,
+      "vss_ml_kg": null
+    },
+    {
+      "animal_id": 201,
+      "dose_group": "G2",
+      "route": "PO",
+      "cmax_ng_ml": 729.0,
+      "tmax_h": 0.994,
+      "auc_0_t_h_ng_ml": 3378.6520761212655,
+      "auc_0_inf_h_ng_ml": 3578.1104485083606,
+      "t_half_h": 2.7761849088190886,
+      "mrt_h": null,
+      "cl_ml_h_kg": null,
+      "vss_ml_kg": null
+    },
+    {
+      "animal_id": 202,
+      "dose_group": "G2",
+      "route": "PO",
+      "cmax_ng_ml": 706.0,
+      "tmax_h": 0.994,
+      "auc_0_t_h_ng_ml": 3025.060198210869,
+      "auc_0_inf_h_ng_ml": 3149.075882608547,
+      "t_half_h": 2.4772657632698083,
+      "mrt_h": null,
+      "cl_ml_h_kg": null,
+      "vss_ml_kg": null
+    },
+    {
+      "animal_id": 301,
+      "dose_group": "G3",
+      "route": "PO",
+      "cmax_ng_ml": 2430.0,
+      "tmax_h": 0.994,
+      "auc_0_t_h_ng_ml": 11787.211018510327,
+      "auc_0_inf_h_ng_ml": 11820.232412208632,
+      "t_half_h": 2.7710273535278973,
+      "mrt_h": null,
+      "cl_ml_h_kg": null,
+      "vss_ml_kg": null
+    }
+  ]
+}

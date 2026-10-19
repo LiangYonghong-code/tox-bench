@@ -1,0 +1,51 @@
+# tox-bench 测评清单
+#
+# eval/ 必须位于仓库根的正下方第一层：common.py 用 Path(__file__).parent.parent
+# 定位仓库根，再按下面的 dir 字段拼出每题目录。
+#
+# workdir 的值来自 environment/Dockerfile 的 WORKDIR 指令，仅作为初始预期值；
+# phase1_build.py 构建完成后会用 `docker inspect` 读取镜像真实的 WorkingDir 回填校验，
+# 两者不一致会在构建日志里报警。禁止在下游脚本里硬编码这些路径。
+#
+# dir 指向的是**可提交的任务包**。作者侧材料一律放在仓库根的 build-tools/ 下，
+# 不进任务包——让"不提交"由目录结构保证，而不是靠 README 里一句口头约定。
+# 与某题绑定的作者侧脚本放在 build-tools/<dir 的末段>/ 下（如
+# build-tools/repeat-dose-noael-judgment/），目录名与这里的 dir 末段必须一致。
+#
+# slug 与 dir 相互独立：slug 决定镜像名（<prefix>/<slug>:<tag>），dir 决定文件位置。
+# 当前两者同名只是为了便于查找。
+#
+# fingerprint_files（可选）声明该题的指纹输入，相对题目录。缺省时用 common.py 里的
+# FINGERPRINT_FILES —— 那组值是 task1 历史分数的可比性依据，**不要改动**；
+# 后续任务按自己的环境文件如实声明，不要为了"统一"去改默认值。
+
+harness:
+  image_prefix: "tox"          # 镜像名前缀，最终形如 tox/noael-judgment:base
+  base_tag: "base"             # 每题原始镜像的 tag
+  solved_tag_prefix: "solved"  # agent 跑完 docker commit 出来的快照 tag 前缀
+
+tasks:
+  - id: 1
+    slug: noael-judgment
+    dir: tasks/repeat-dose-noael-judgment
+    workdir: /app
+    lang: python
+    tests_entry: test_outputs.py
+    runner: pytest
+    # task1 的历史分数以这组文件为可比性依据，冻结不要改动。
+    fingerprint_files:
+      - instruction.md
+      - environment/SOP_toxicity_criteria.md
+      - environment/study.db
+
+  - id: 2
+    slug: clinical-tk-parameter-analysis
+    dir: tasks/clinical-tk-parameter-analysis
+    workdir: /app
+    lang: python
+    tests_entry: test_outputs.py
+    runner: pytest
+    # 本题环境里没有 SOP 文件：题面 + 数据就是全部输入。
+    fingerprint_files:
+      - instruction.md
+      - environment/study.db

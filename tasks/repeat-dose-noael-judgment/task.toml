@@ -5,18 +5,26 @@ version = "0.1.0"
 language = "zh-CN"
 
 [task]
+# harbor 把 [task] 节解析成 PackageInfo，其 name 必填且须为 org/name 形式（取镜像名去 tag）。
+# 与顶层的 name 用途不同：顶层是给人看的中文题名，这里是给 harbor 用的包标识，勿合并。
+name = "tox/noael-judgment"
 domain = ["toxicology", "pharmacology", "preclinical-safety", "data-analysis"]
 skills = ["sqlite", "pandas", "统计比较", "专业判定", "结构化输出"]
-difficulty = "hard"
-# 专家（毒理专题负责人）与新手完成该题的大致耗时，供难度标定参考
+# 专家（毒理专题负责人）与新手完成该题的大致耗时，供参考
 expert_time_hours = 4
 novice_time_hours = 24
 deliverables = ["judgment.json", "report.md"]
 
 [environment]
+# build_context / image 供本仓库自建 harness 使用；harbor 不读取这两个键，
+# 它按 environment/Dockerfile 自动构建 hb__<hash> 镜像。
 build_context = "environment"
 image = "tox/noael-judgment:base"
 workdir = "/app"
+# 以下为 harbor 原生字段；不写则用 harbor 默认值（构建 600s、CPU/内存不限制）。
+build_timeout_sec = 900
+cpus = 2
+memory_mb = 4096
 
 [tests]
 # 判分器在 agent 结束后注入，agent 不可见
@@ -25,6 +33,18 @@ oracle = "solution/solve.sh"
 reward_file = "/logs/verifier/reward.txt"
 case_count = 10
 
+# ↓ 下面两节是 harbor 原生配置。harbor 的默认值是 agent 不限时、判分 600s；
+# 不写 [agent]/[verifier] 时，真模型跑起来没有墙钟上限。
+[agent]
+# 与 [phases].agent_timeout_sec 对齐
+timeout_sec = 7200
+
+[verifier]
+# 与 [phases].verify_timeout_sec 对齐
+timeout_sec = 900
+
+# [phases] / [resources] 是仓库自建 harness（eval/common.py）读取的字段，
+# harbor 会静默忽略它们，两套值需保持一致。
 [phases]
 build_timeout_sec = 900
 agent_timeout_sec = 7200
